@@ -1,9 +1,11 @@
 #lang web-server/insta
 
+(require racket/match)
 (require racket/sandbox)
 
 (define base-top-eval
-  (make-evaluator '(begin) '(define (f) later)))
+  (make-evaluator 'racket/base)
+  )
 
 (define (start request)
   (cond
@@ -17,26 +19,44 @@
    `(html
      (head (title "Calvino"))
      (body
-      (h1 "Your code:")
+      (h1 "Evaluator")
+      (p "Please enter some code:")
       (form
-       (textarea ((rows "10") (cols "80") (name "code")) "Insert your code")
-       (input ((type "submit")))
+       (table
+        (tr (td (textarea ((rows "10") (cols "80") (name "code")) "")))
+        (tr (td (input ((type "submit") (value "Evaluate!")))))
+        )
        )
       )
      )
    )
   )
 
+(define handle-error (λ (e) (cons 'error (exn-message e))))
+
 (define (code-page request)
-  (response/xexpr
-   `(html
-     (head (title "Calvino"))
-     (body
-      (h1 "This is YOUR code")
-      (p
-       ,(format "~v" (base-top-eval (extract-binding/single 'code (request-bindings request))))
+  (define (response-generator embed/url)
+    (let*
+        ([code (extract-binding/single 'code (request-bindings request))]
+         [res (with-handlers ([exn? handle-error]) (cons 'ok (base-top-eval code)))]
+         )
+      (response/xexpr
+       `(html
+         (head (title "Calvino"))
+         (body
+          (h1 "Your code was:")
+          (code ,code)
+          (h1 "The result")
+          ,(match res
+            [(cons 'ok s) `(p ,(format "~v" s))]
+            [(cons 'error m) `(p ((style "background-color: #ff8080")) ,m)]
+            [strange `(p ,(format "Okay, something really weird happened. (evaluation returned ~v)" strange))]
+            )
+          )
+         (p (a ((href ,(embed/url main-page))) "To main page"))
+         )
        )
       )
-     )
-   )
+    )
+  (send/suspend/dispatch response-generator)
   )
