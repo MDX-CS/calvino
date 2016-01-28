@@ -20,7 +20,7 @@
      (head (title "Calvino"))
      (body
       (h1 "Evaluator")
-      (p "Please enter some code:")
+      (p "Please enter some Racket code:")
       (form
        (table
         (tr (td (textarea ((rows "10") (cols "80") (name "code")) "")))
