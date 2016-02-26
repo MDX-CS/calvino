@@ -4,11 +4,11 @@
 (require racket/sandbox)
 
 (define base-top-eval
-;  (parameterize ([sandbox-path-permissions
-;                 '([read "/dev/ttyE0"])
-;                  ])
-    (make-evaluator 'racket/base)
-;    )
+  (parameterize ([sandbox-path-permissions
+                 '([execute "/bin/sh"] [write "/dev/tty.usbmodem1411"] )
+                  ])
+    (make-evaluator 'racket/base #:allow-for-require '("AsipMain.rkt"))
+    )
   )
 
 (define (start request)
