@@ -4,7 +4,11 @@
 (require racket/sandbox)
 
 (define base-top-eval
-  (make-evaluator 'racket/base)
+;  (parameterize ([sandbox-path-permissions
+;                 '([read "/dev/ttyE0"])
+;                  ])
+    (make-evaluator 'racket/base)
+;    )
   )
 
 (define (start request)
@@ -16,22 +20,22 @@
 
 (define (main-page request)
   (define (response-generator embed/url)
-  (response/xexpr
-   `(html
-     (head (title "Calvino"))
-     (body
-      (h1 "Evaluator")
-      (p "Please enter some Racket code:")
-      (form ((action ,(embed/url code-page)))
-       (table
-        (tr (td (textarea ((rows "10") (cols "80") (name "code")) "")))
-        (tr (td (input ((type "submit") (value "Evaluate!")))))
+    (response/xexpr
+     `(html
+       (head (title "Calvino"))
+       (body
+        (h1 "Evaluator")
+        (p "Please enter some Racket code:")
+        (form ((action ,(embed/url code-page)))
+              (table
+               (tr (td (textarea ((rows "10") (cols "80") (name "code")) "")))
+               (tr (td (input ((type "submit") (value "Evaluate!")))))
+               )
+              )
         )
        )
-      )
      )
-   )
-  )
+    )
   (send/suspend/dispatch response-generator)
   )
 
@@ -51,10 +55,10 @@
           (code ,code)
           (h1 "The result")
           ,(match res
-            [(cons 'ok s) `(p ,(format "~v" s))]
-            [(cons 'error m) `(p ((style "background-color: #ff8080")) ,m)]
-            [strange `(p ,(format "Okay, something really weird happened. (evaluation returned ~v)" strange))]
-            )
+             [(cons 'ok s) `(p ,(format "~v" s))]
+             [(cons 'error m) `(p ((style "background-color: #ff8080")) ,m)]
+             [strange `(p ,(format "Okay, something really weird happened. (evaluation returned ~v)" strange))]
+             )
           )
          (p (a ((href ,(embed/url main-page))) "To main page"))
          )
