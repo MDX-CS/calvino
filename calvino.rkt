@@ -15,13 +15,14 @@
   )
 
 (define (main-page request)
+  (define (response-generator embed/url)
   (response/xexpr
    `(html
      (head (title "Calvino"))
      (body
       (h1 "Evaluator")
       (p "Please enter some Racket code:")
-      (form
+      (form ((action ,(embed/url code-page)))
        (table
         (tr (td (textarea ((rows "10") (cols "80") (name "code")) "")))
         (tr (td (input ((type "submit") (value "Evaluate!")))))
@@ -30,6 +31,8 @@
       )
      )
    )
+  )
+  (send/suspend/dispatch response-generator)
   )
 
 (define handle-error (λ (e) (cons 'error (exn-message e))))
