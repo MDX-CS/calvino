@@ -2,20 +2,24 @@
 
 (require racket/match)
 (require racket/sandbox)
+(require db)
 
 (define base-top-eval
   (parameterize ([sandbox-path-permissions
-                 '([execute "/bin/sh"] [write "/dev/tty.usbmodem1411"] )
+                 '([execute "/bin/stty"] [write "/dev/tty.usbmodem1411"] )
                   ])
     (make-evaluator 'racket/base #:allow-for-require '("AsipMain.rkt"))
     )
   )
 
+(define pgc
+	(postgresql-connect #:user "jaap1" #:database "calvino")
+	)
+
 (define (start request)
-  (cond
-    [(exists-binding? 'code (request-bindings request)) (code-page request)]
-    [else (main-page request)]
-    )
+	(define (response-generator embed/url)
+		(response/xexpr
+			`(html
   )
 
 (define (main-page request)
