@@ -5,21 +5,28 @@
 (require db)
 
 (define base-top-eval
-  (parameterize ([sandbox-path-permissions
-                 '([execute "/bin/stty"] [write "/dev/tty.usbmodem1411"] )
-                  ])
-    (make-evaluator 'racket/base #:allow-for-require '("AsipMain.rkt"))
-    )
-  )
+  (make-evaluator 'racket/base)
+)
 
 (define pgc
-	(postgresql-connect #:user "jaap1" #:database "calvino")
-	)
+  (postgresql-connect #:user "jaap1" #:database "calvino")
+  )
 
 (define (start request)
-	(define (response-generator embed/url)
-		(response/xexpr
-			`(html
+  (define (response-generator embed/url)
+    (response/xexpr
+     `(html
+       (head (title "Calvino"))
+       (body
+        (h1 "Main menu")
+        (ul
+         (li (a [(href ,(embed/url main-page))] "Try some code"))
+         )
+        )
+       )
+     )
+    )
+  (send/suspend/dispatch response-generator)
   )
 
 (define (main-page request)
