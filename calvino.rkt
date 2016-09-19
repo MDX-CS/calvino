@@ -18,13 +18,16 @@
 ; Database stuff
 
 (define pgc
-  (postgresql-connect #:user "jaap1" #:database "calvino")
+  (postgresql-connect #:user "jaapb" #:database "calvino")
   )
 
-(define save-exercise-query (prepare pgc "INSERT INTO exercises (description, inputs, code) \
-  VALUES ($1, $2, $3)"))
+(define save-exercise-query (prepare pgc "INSERT INTO exercises (description, code) \
+  VALUES ($1, $2) RETURNING id"))
+(define save-inputs-query (prepare pgc "INSERT INTO exercise_inputs (exercise_id, input_line) \
+  VALUES ($1, $2)"))
 (define get-exercise-ids-query (prepare pgc "SELECT id FROM exercises"))
-(define get-exercise-query (prepare pgc "SELECT description, inputs, code FROM exercises WHERE id=$1"))
+(define get-exercise-query (prepare pgc "SELECT description, code FROM exercises WHERE id=$1"))
+(define get-exercise-inputs-query (prepare pgc "SELECT input_line FROM exercise_inputs WHERE exercise_id=$1"))
 
 ; Web stuff
 
@@ -77,19 +80,26 @@
 
 (define (handle-error e) (cons 'error (exn-message e)))
 
-(define (try-code inputs ref-code sub-code)
-  (with-handlers ([exn? handle-error]) (cons 'ok (base-top-eval sub-code)))
+(define (try-code inputs code)
+  (with-handlers ([exn? handle-error])
+    (base-top-eval code)
+    (cons 'ok (for/list [(i inputs)]
+      (base-top-eval (format "(main ~a)" i))
+                )
+          )
+    )
   )
 
 (define (code-page request)
   (define (response-generator embed/url)
     (let*
-        ([exercise-id (extract-binding/single 'id (request-bindings request))]
-         [ex (query-row pgc get-exercise-query (string->number exercise-id))]
-         [inputs (vector-ref ex 1)]
-         [reference-code (vector-ref ex 2)]
+        ([exercise-id (string->number (extract-binding/single 'id (request-bindings request)))]
+         [ex (query-row pgc get-exercise-query exercise-id)]
+         [reference-code (vector-ref ex 1)]
+         [inputs (query-list pgc get-exercise-inputs-query exercise-id)]
          [submitted-code (extract-binding/single 'code (request-bindings request))]
-         [res (try-code inputs reference-code submitted-code)]
+         [res (try-code inputs submitted-code)]
+         [ref-res (try-code inputs reference-code)]
          )
       (response/xexpr
        `(html
@@ -99,6 +109,12 @@
           (code ,submitted-code)
           (h1 "The result")
           ,(match res
+             [(cons 'ok s) `(p ,(format "~v" s))]
+             [(cons 'error m) `(p ((style "background-color: #ff8080")) ,m)]
+             [strange `(p ,(format "Okay, something really weird happened. (evaluation returned ~v)" strange))]
+             )
+          (h1 "The reference result")
+          ,(match ref-res
              [(cons 'ok s) `(p ,(format "~v" s))]
              [(cons 'error m) `(p ((style "background-color: #ff8080")) ,m)]
              [strange `(p ,(format "Okay, something really weird happened. (evaluation returned ~v)" strange))]
@@ -139,11 +155,12 @@
 
 (define (save-exercise request)
   (define (response-generator embed/url)
-  (let
+  (let*
       ([description (extract-binding/single 'description (request-bindings request))]
-       [inputs (extract-binding/single 'inputs (request-bindings request))]
-       [code (extract-binding/single 'code (request-bindings request))])
-    (query-exec pgc save-exercise-query description inputs code)
+       [inputs (string-split (extract-binding/single 'inputs (request-bindings request)) "\n")]
+       [code (extract-binding/single 'code (request-bindings request))]
+       [ex_id (query-value pgc save-exercise-query description code)])
+    (for [(i inputs)] (query-exec pgc save-inputs-query ex_id i))
     (response/xexpr
      `(html
        (head (title "Calvino"))
