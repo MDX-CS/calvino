@@ -23,7 +23,7 @@
 
 (define save-exercise-query (prepare pgc "INSERT INTO exercises (description, code) \
   VALUES ($1, $2) RETURNING id"))
-(define save-inputs-query (prepare pgc "INSERT INTO exercise_inputs (exercise_id, input_line) \
+(define save-input-query (prepare pgc "INSERT INTO exercise_inputs (exercise_id, input_line) \
   VALUES ($1, $2)"))
 (define get-exercise-ids-query (prepare pgc "SELECT id FROM exercises"))
 (define get-exercise-query (prepare pgc "SELECT description, code FROM exercises WHERE id=$1"))
@@ -81,12 +81,9 @@
 (define (handle-error e) (cons 'error (exn-message e)))
 
 (define (try-code inputs code)
-  (with-handlers ([exn? handle-error])
-    (base-top-eval code)
-    (cons 'ok (for/list [(i inputs)]
-      (base-top-eval (format "(main ~a)" i))
-                )
-          )
+  (with-handlers ([exn? handle-error]) (base-top-eval code))
+  (for/list [(i inputs)]
+    (with-handlers ([exn? handle-error]) (base-top-eval (format "(main ~a)" i)))
     )
   )
 
@@ -107,18 +104,10 @@
          (body
           (h1 "Your code was:")
           (code ,submitted-code)
-          (h1 "The result")
-          ,(match res
-             [(cons 'ok s) `(p ,(format "~v" s))]
-             [(cons 'error m) `(p ((style "background-color: #ff8080")) ,m)]
-             [strange `(p ,(format "Okay, something really weird happened. (evaluation returned ~v)" strange))]
-             )
-          (h1 "The reference result")
-          ,(match ref-res
-             [(cons 'ok s) `(p ,(format "~v" s))]
-             [(cons 'error m) `(p ((style "background-color: #ff8080")) ,m)]
-             [strange `(p ,(format "Okay, something really weird happened. (evaluation returned ~v)" strange))]
-             )
+          (h2 "Result")
+          (p ,(format "~v" res))
+          (h2 "Reference")
+          (p ,(format "~v" res))
           )
          (p (a [(href ,(embed/url start))] "To main page"))
          )
@@ -153,24 +142,54 @@
   (send/suspend/dispatch response-generator)
   )
 
-(define (save-exercise request)
+  (define (save-exercise request)
   (define (response-generator embed/url)
   (let*
       ([description (extract-binding/single 'description (request-bindings request))]
        [inputs (string-split (extract-binding/single 'inputs (request-bindings request)) "\n")]
        [code (extract-binding/single 'code (request-bindings request))]
-       [ex_id (query-value pgc save-exercise-query description code)])
-    (for [(i inputs)] (query-exec pgc save-inputs-query ex_id i))
-    (response/xexpr
-     `(html
-       (head (title "Calvino"))
-       (body
-        (h1 "Done")
-        (p "Exercise saved.")
-        (p (a [(href ,(embed/url start))] "Back to main menu"))
+       [results (try-code inputs code)])
+    (match results
+      [(cons 'error e)
+       (response/xexpr
+        `(html
+          (head (title "Calvino"))
+          (body
+           (h1 "Error")
+           (p "Something went wrong, an error occurred in the definitions.")
+           (p e)
+           (p (a [(href ,(embed/url start))] "To main page"))
+           )
+          )
         )
-       )
-     )
+       ]
+      [r
+       (let
+           ([ex-id (query-value pgc save-exercise-query description code)])
+            (response/xexpr
+             `(html
+               (head (title "Calvino"))
+               (body
+                (h1 "Results")
+                (table
+                 (tr (th "Inputs") (th "Result"))
+                 ,@(for/list ([i inputs] [r results])
+                     (match r
+                       [(cons 'error e) `(tr (td ,i) (td ,e))]
+                       [else
+                        (query-exec pgc save-input-query ex-id (string-trim i))
+                        `(tr (td ,i) (td ,(format "~v" r)))
+                        ]
+                       )
+                     )
+                 )
+                (p (a [(href ,(embed/url start))] "To main page"))
+                )
+               )
+             )
+         )
+       ]
+      )
     )
     )
   (send/suspend/dispatch response-generator)
