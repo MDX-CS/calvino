@@ -87,6 +87,15 @@
     )
   )
 
+(define (update-verdict old new)
+  (match (unbox old)
+    ['error (set-box! old 'error)]
+    ['notok (cond [(equal? new 'error) (set-box! old 'error)] [else (set-box! old 'notok)])]
+    ['ok (cond [(equal? new 'ok) (set-box! old 'ok)] [else (set-box! old new)])]
+    ['unknown (set-box! old new)]
+    )
+  )
+
 (define (code-page request)
   (define (response-generator embed/url)
     (let*
@@ -97,6 +106,7 @@
          [submitted-code (extract-binding/single 'code (request-bindings request))]
          [res (try-code inputs submitted-code)]
          [ref-res (try-code inputs reference-code)]
+         [verdict (box 'unknown)]
          )
       (response/xexpr
        `(html
@@ -105,11 +115,28 @@
           (h1 "Your code was:")
           (code ,submitted-code)
           (h2 "Result")
-          (p ,(format "~v" res))
-          (h2 "Reference")
-          (p ,(format "~v" res))
+          (table
+           (tr (th "Input") (th "Your result") (th "Expected result"))
+          ,@(for/list ([i inputs] [r res] [rr ref-res])
+              `(tr
+                (td ,i)
+                ,(match r
+                   [(cons 'error e) (update-verdict verdict 'error) `(td [(style "background-color: red;")] ,e)]
+                   [else (update-verdict verdict (cond [(equal? r rr) 'ok] [else 'notok])) `(td ,(format "~v" r))]
+                   )
+                (td ,(format "~v" rr))
+               )
+              )
           )
+          (h2 "Verdict")
+          ,(match (unbox verdict)
+             ['unknown `(p (b "UNKNOWN: ") "No inputs were run on the program, this probably means the exercise wasn't set up correctly.")]
+             ['error `(p (b "ERROR: ") "Your program produced errors on execution with some or all of the inputs.")]
+             ['notok `(p (b "NOT OK: ") "Your program executed without errors, but one or more of the results were incorrect.")]
+             ['ok `(p (b "OK: ") "Your program executed without errors and produced the correct results for all test cases.")]
+             )
          (p (a [(href ,(embed/url start))] "To main page"))
+         )
          )
        )
       )
