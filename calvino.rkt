@@ -2,7 +2,9 @@
 
 (require racket/match)
 (require racket/sandbox)
+(require net/ldap)
 (require db)
+(require "config.rkt")
 
 ; Utility stuff
 (define (random-element l)
@@ -18,7 +20,7 @@
 ; Database stuff
 
 (define pgc
-  (postgresql-connect #:user "jaapb" #:database "calvino")
+  (postgresql-connect #:user database-user #:database database-name)
   )
 
 (define save-exercise-query (prepare pgc "INSERT INTO exercises (description, code) \
@@ -29,54 +31,7 @@
 (define get-exercise-query (prepare pgc "SELECT description, code FROM exercises WHERE id=$1"))
 (define get-exercise-inputs-query (prepare pgc "SELECT input_line FROM exercise_inputs WHERE exercise_id=$1"))
 
-; Web stuff
-
-(define (start request)
-  (define (response-generator embed/url)
-    (response/xexpr
-     `(html
-       (head (title "Calvino"))
-       (body
-        (h1 "Main menu")
-        (ul
-         (li (a [(href ,(embed/url main-page))] "Try an exercise"))
-         (li (a [(href ,(embed/url add-exercise))] "Add an exercise"))
-         )
-        )
-       )
-     )
-    )
-  (send/suspend/dispatch response-generator)
-  )
-
-(define (main-page request)
-  (define (response-generator embed/url)
-    (let*
-        ([ex-ids (query-rows pgc get-exercise-ids-query)]
-         [ex-id (vector-ref (random-element ex-ids) 0)]
-         [ex (query-row pgc get-exercise-query ex-id)]
-         [descr (vector-ref ex 0)]
-         )
-      (response/xexpr
-       `(html
-         (head (title "Calvino"))
-         (body
-          (h1 "Exercise")
-          (p ,descr)
-          (form [(action ,(embed/url code-page))]
-                (table
-                 (tr (td (textarea [(rows "10") (cols "80") (name "code")] "")))
-                 (tr (td (input [(type "hidden") (name "id") (value ,(number->string ex-id))])))
-                 (tr (td (input [(type "submit") (value "Evaluate!")])))
-                 )
-                )
-          )
-         )
-       )
-      )
-    )
-  (send/suspend/dispatch response-generator)
-  )
+; Code handling stuff
 
 (define (handle-error e) (cons 'error (exn-message e)))
 
@@ -94,6 +49,107 @@
     ['ok (cond [(equal? new 'ok) (set-box! old 'ok)] [else (set-box! old new)])]
     ['unknown (set-box! old new)]
     )
+  )
+
+; Web stuff
+
+(define (start request)
+  (define (response-generator embed/url)
+    (response/xexpr
+     `(html
+       (head (title "Calvino"))
+       (body
+        (h1 "Login")
+        (form ([action ,(embed/url check-credentials)] [method "post"])
+              (table
+               (tr
+                (td "User ID")
+                (td (input ([name "username"])))
+                )
+               (tr
+                (td "Password")
+                (td (input ([name "password"] [type "password"])))
+                )
+               (tr
+                (td ([colspan "2"]) (input ([type "submit"] [value "Login"])))
+                )
+              )
+              )
+        )
+       )
+     )
+    )
+  (send/suspend/dispatch response-generator)
+  )
+
+(define (check-credentials request)
+  (define (response-generator embed/url)
+    (let*
+        ([username (extract-binding/single 'username (request-bindings request))]
+         [password (extract-binding/single 'password (request-bindings request))]
+         [ldap-result (ldap-authenticate ldap-server 389 (string-append "Uni\\" username) password)])
+      (response/xexpr
+       `(html
+         (head (title "Calvino"))
+         (body
+          (h1 "Credentials")
+          (ul
+           (li "LDAP says: " ,(format "~a" ldap-result))
+           )
+          )
+         )
+       )
+      )
+    )
+  (send/suspend/dispatch response-generator)
+  )
+
+(define (main-menu request)
+  (define (response-generator embed/url)
+    (response/xexpr
+     `(html
+       (head (title "Calvino"))
+       (body
+        (h1 "Main menu")
+        (ul
+         (li (a [(href ,(embed/url do-exercise))] "Try an exercise"))
+         (li (a [(href ,(embed/url list-exercises))] "List the available exercises"))
+         (li (a [(href ,(embed/url add-exercise))] "Add an exercise"))
+         )
+        )
+       )
+     )
+    )
+  (send/suspend/dispatch response-generator)
+  )
+
+(define (do-exercise request)
+  (define (response-generator embed/url)
+    (let*
+        ([ex-ids (query-rows pgc get-exercise-ids-query)]
+         [ex-id (vector-ref (random-element ex-ids) 0)]
+         [ex (query-row pgc get-exercise-query ex-id)]
+         [descr (vector-ref ex 0)]
+         )
+      (response/xexpr
+       `(html
+         (head (title "Calvino"))
+         (body
+          (h1 "Exercise")
+          (p ,descr)
+          (form [(action ,(embed/url code-page))]
+                (table
+                 (tr (td (textarea ([rows "10"] [cols "80"] [name "code"]) "")))
+                 (tr (td (input ([type "hidden"] [name "id"] [value ,(number->string ex-id)]))))
+                 (tr (td (input ([type "submit"] [value "Evaluate!"]))))
+                 )
+                )
+          )
+         )
+       )
+      )
+    )
+  (send/suspend/dispatch response-generator)
   )
 
 (define (code-page request)
@@ -221,5 +277,24 @@
     )
   (send/suspend/dispatch response-generator)
   )
-      
+
+(define (list-exercises request)
+  (define (response-generator embed/url)
+    (response/xexpr
+     `(html
+       (head (title "Calvino"))
+       (body
+        (h1 "Main menu")
+        (ul
+         (li (a [(href ,(embed/url do-exercise))] "Try an exercise"))
+         (li (a [(href ,(embed/url list-exercises))] "List the available exercises"))
+         (li (a [(href ,(embed/url add-exercise))] "Add an exercise"))
+         )
+        )
+       )
+     )
+    )
+  (send/suspend/dispatch response-generator)
+  )
+
      
